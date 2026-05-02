@@ -5,6 +5,7 @@ Matuojamas apšviestumas:
 * 10 - 1000 lux
 * 0 - 100 Hz
 * Skaičiuojamas kiekvieno kanalo vidurkis ir kanalų skirtumas
+
 Matuojama nuolatinė įtampa:
 * 2 kanalai
 * 0.1 - 25 V
