@@ -1,3 +1,3 @@
 # Įterptinės
 
-# STM32F042K6T6
+STM32F042K6T6
