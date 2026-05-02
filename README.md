@@ -1,15 +1,15 @@
 # Įterptinių sistemų inžinerinis projektas
 
 Matuojamas apšviestumas:
-* 2 kanalai
 * 10 - 1000 lux
 * 0 - 100 Hz
+* 2 kanalai
 * Skaičiuojamas kiekvieno kanalo vidurkis ir kanalų skirtumas
 
 Matuojama nuolatinė įtampa:
-* 2 kanalai
 * 0.1 - 25 V
 * 0 - 0.1 Hz
+* 2 kanalai
 * Skaičiuojamas kiekvieno kanalo vidurkis
 
 Indikatoriuje parodymai atnaujinami kas 2s, apšviestumo parametrai į PC perduodami kas 0.2 s, įtampos - kas 1 s.
