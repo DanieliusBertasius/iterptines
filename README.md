@@ -14,7 +14,7 @@ Matuojama nuolatinė įtampa:
 
 Indikatoriuje parodymai atnaujinami kas 2s, apšviestumo parametrai į PC perduodami kas 0.2 s, įtampos - kas 1 s.
 
-##Pagrindiniai komponentai:
+## Pagrindiniai komponentai:
 * STM32F042K6T6
 * TEPT5600 fototranzistoriai
 * MCP6S22 PGA
