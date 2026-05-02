@@ -11,6 +11,7 @@ Matuojama nuolatinė įtampa:
 * 0.1 - 25 V
 * 0 - 0.1 Hz
 * Skaičiuojamas kiekvieno kanalo vidurkis
+
 Indikatoriuje parodymai atnaujinami kas 2s, apšviestumo parametrai į PC perduodami kas 0.2 s, įtampos - kas 1 s.
 
 Pagrindiniai komponentai:
