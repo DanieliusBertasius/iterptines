@@ -1,3 +1,16 @@
+# =========================
+# General / OS
+# =========================
+
+.DS_Store
+Thumbs.db
+*.log
+
+
+# =========================
+# C / C++ / Build Artifacts
+# =========================
+
 # Prerequisites
 *.d
 
@@ -12,7 +25,7 @@
 *.map
 *.exp
 
-# Precompiled Headers
+# Precompiled headers
 *.gch
 *.pch
 
@@ -22,7 +35,7 @@
 *.la
 *.lo
 
-# Shared objects (inc. Windows DLLs)
+# Shared objects
 *.dll
 *.so
 *.so.*
@@ -41,15 +54,66 @@
 *.su
 *.idb
 *.pdb
-
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
-
-# debug information files
 *.dwo
+
+
+# =========================
+# STM32CubeIDE (Eclipse)
+# =========================
+
+# Build directories
+Debug/
+Release/
+build/
+
+# Eclipse metadata
+.metadata/
+.settings/
+*.launch
+
+# Temporary files
+*.tmp
+*.bak
+
+
+# =========================
+# Altium Designer
+# =========================
+
+# Cache / temporary files
+__Previews/
+History/
+
+# Autosave / backups
+*.Backup
+*.OldVersions
+
+# Preview files
+*.SchDocPreview
+*.PcbDocPreview
+
+# Output directories
+Project Outputs for */
+
+# Fabrication outputs (Gerbers, drill files)
+*.GBL
+*.GTL
+*.GKO
+*.GTO
+*.GBS
+*.GTS
+*.DRL
+
+# Exported outputs
+*.PDF
+*.TXT
+*.xml
+*.csv
+
+
+# =========================
+# Optional archives
+# =========================
+
+*.zip
+*.rar
