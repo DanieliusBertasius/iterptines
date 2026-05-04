@@ -4,7 +4,7 @@
 <img width="729" height="440" alt="image" src="https://github.com/user-attachments/assets/eef47d86-84c7-4af2-9bad-427a1071d531" /> <br />
  
 Matuojamas apšviestumas:
-* 10 - 1000 lux
+* 10 - 1000 lx
 * 0 - 100 Hz
 * 2 kanalai
 * Skaičiuojamas kiekvieno kanalo vidurkis ir kanalų skirtumas
