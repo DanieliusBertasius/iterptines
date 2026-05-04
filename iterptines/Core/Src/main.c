@@ -32,7 +32,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-//#define SSD1306_INCLUDE_FONT_6x8
+#define column_pos 14*6
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -107,24 +107,34 @@ int main(void)
   ssd1306_SetCursor(0,0);
   ssd1306_WriteString("Apsviestumas",Font_6x8,White);
   ssd1306_SetCursor(0,9);
-  ssd1306_WriteString("   AVG:   CH1 1000 lx",Font_6x8,White);
+  ssd1306_WriteString("   AVG:   CH1      lx",Font_6x8,White);
   ssd1306_SetCursor(0,18);
-  ssd1306_WriteString("          CH2 1000 lx",Font_6x8,White);
+  ssd1306_WriteString("          CH2      lx",Font_6x8,White);
   ssd1306_SetCursor(0,27);
-  ssd1306_WriteString("   Skirtumas: 1000 lx",Font_6x8,White);
+  ssd1306_WriteString("   Skirtumas:      lx",Font_6x8,White);
   ssd1306_SetCursor(0,38);
   ssd1306_WriteString("Itampos",Font_6x8,White);
   ssd1306_SetCursor(0,47);
-  ssd1306_WriteString("   AVG:   CH1   25 V",Font_6x8,White);
+  ssd1306_WriteString("   AVG:   CH1      V",Font_6x8,White);
   ssd1306_SetCursor(0,56);
-  ssd1306_WriteString("          CH2   25 V",Font_6x8,White);
-  ssd1306_UpdateScreen();
+  ssd1306_WriteString("          CH2      V",Font_6x8,White);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  ssd1306_SetCursor(column_pos,9);
+	  ssd1306_WriteString("1000",Font_6x8,White); // ch1 apsviestumas
+	  ssd1306_SetCursor(column_pos,18);
+	  ssd1306_WriteString("1000",Font_6x8,White); // ch2 apsviestumas
+	  ssd1306_SetCursor(column_pos,27);
+	  ssd1306_WriteString("1000",Font_6x8,White); // apsviestumu skirtumas
+	  ssd1306_SetCursor(column_pos,47);
+	  ssd1306_WriteString("25.0",Font_6x8,White); // ch1 itampa
+	  ssd1306_SetCursor(column_pos,56);
+	  ssd1306_WriteString("25.0",Font_6x8,White); // ch2 itampa
+	  ssd1306_UpdateScreen();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
