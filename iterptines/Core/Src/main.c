@@ -33,8 +33,12 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define column_pos 14*6
-#define SAMPLES 500
+#define SAMPLES 401
 #define CHANNELS 3
+#define VDD 3.21
+#define COEF 285714
+#define CORR1 9.2
+#define CORR2 9.2
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -55,8 +59,11 @@ TIM_HandleTypeDef htim1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-volatile uint16_t value_adc[CHANNELS][SAMPLES],dma[CHANNELS];
-volatile uint8_t sample=0,channel=0;
+volatile uint16_t dma[CHANNELS*SAMPLES];
+uint32_t vidurkis_ev1=0,vidurkis_ev2=0,vidurkis_u1=0,vidurkis_u2=0;
+int16_t skirtumas=0;
+float vidurkis_ev1f=0,vidurkis_ev2f=0,vidurkis_u1f=0,vidurkis_u2f=0,skirtumas_f;
+volatile uint8_t puses=0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -113,7 +120,7 @@ int main(void)
   MX_SPI1_Init();
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
-  HAL_ADC_Start_IT(&hadc);
+  HAL_ADC_Start_DMA(&hadc, (uint32_t*)dma, SAMPLES*CHANNELS);
   HAL_TIM_Base_Start(&htim1);
 
   ssd1306_Init();
@@ -137,6 +144,26 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if(puses>=2){
+		  puses=0;
+		  vidurkis_ev1=0;
+		  vidurkis_ev2=0;
+		  for(int i=2;i<SAMPLES*CHANNELS+1;i+=3){
+			  vidurkis_ev1+=dma[i-1];
+			  vidurkis_ev2+=dma[i];
+		  }
+		  vidurkis_ev1f=(float)vidurkis_ev1/SAMPLES;
+		  vidurkis_ev2f=(float)vidurkis_ev2/SAMPLES;
+
+		  vidurkis_ev1f=VDD-vidurkis_ev1f*VDD/4095; //itampa ant r
+		  vidurkis_ev1f=vidurkis_ev1f/825; //srove
+		  vidurkis_ev1f=vidurkis_ev1f*COEF*CORR1; //apsviestumas
+
+		  skirtumas=dma[SAMPLES*CHANNELS-1-1]-dma[SAMPLES*CHANNELS-1];
+		  skirtumas_f=VDD-skirtumas*VDD/4095;
+		  skirtumas_f=skirtumas_f/825;
+		  skirtumas_f=skirtumas_f*COEF;
+	  }
 //	  ssd1306_SetCursor(column_pos,9);
 //	  ssd1306_WriteString("1000",Font_6x8,White); // ch1 apsviestumas
 //	  ssd1306_SetCursor(column_pos,18);
@@ -334,8 +361,8 @@ static void MX_SPI1_Init(void)
   /* SPI1 parameter configuration*/
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_4BIT;
+  hspi1.Init.Direction = SPI_DIRECTION_1LINE;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
@@ -375,9 +402,9 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 0;
+  htim1.Init.Prescaler = 2;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 63999;
+  htim1.Init.Period = 65535;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
@@ -486,21 +513,16 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc){
+	puses=1;
+	//pga turetu kiekviena timerio callbacka togglint kanala
+	//apsviestumas i pc
+	// counteris itampai
+	// counteris displayui
+}
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 {
-    value_adc[channel][sample] = HAL_ADC_GetValue(hadc);
-    debug=HAL_ADC_GetValue(hadc);
-
-    channel++;
-
-    if(channel == CHANNELS)
-    {
-    	channel=0;
-        sample++;
-        if(sample==SAMPLES){
-            	sample=0;
-		}
-    }
+    puses = 2;
 }
 /* USER CODE END 4 */
 
