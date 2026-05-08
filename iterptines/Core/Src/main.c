@@ -162,7 +162,7 @@ int main(void)
 		  skirtumas=dma[SAMPLES*CHANNELS-1-1]-dma[SAMPLES*CHANNELS-1];
 		  skirtumas_f=VDD-skirtumas*VDD/4095;
 		  skirtumas_f=skirtumas_f/825;
-		  skirtumas_f=skirtumas_f*COEF;
+		  skirtumas_f=skirtumas_f*COEF*(CORR1+CORR2)/2;
 	  }
 //	  ssd1306_SetCursor(column_pos,9);
 //	  ssd1306_WriteString("1000",Font_6x8,White); // ch1 apsviestumas
