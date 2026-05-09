@@ -36,9 +36,9 @@
 #define SAMPLES 401
 #define CHANNELS 3
 #define VDD 3.21
-#define COEF 285714
-#define CORR1 9.2
-#define CORR2 9.2
+#define COEF 387097
+#define CORR1 17
+#define CORR2 17
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -120,6 +120,11 @@ int main(void)
   MX_SPI1_Init();
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
+  if (HAL_ADCEx_Calibration_Start(&hadc) != HAL_OK)
+  {
+      Error_Handler();
+  }
+
   HAL_ADC_Start_DMA(&hadc, (uint32_t*)dma, SAMPLES*CHANNELS);
   HAL_TIM_Base_Start(&htim1);
 
@@ -155,13 +160,16 @@ int main(void)
 		  vidurkis_ev1f=(float)vidurkis_ev1/SAMPLES;
 		  vidurkis_ev2f=(float)vidurkis_ev2/SAMPLES;
 
-		  vidurkis_ev1f=VDD-vidurkis_ev1f*VDD/4095; //itampa ant r
-		  vidurkis_ev1f=vidurkis_ev1f/825; //srove
+		  vidurkis_ev1f=vidurkis_ev1f*VDD/4095; //itampa ant r
+		  vidurkis_ev1f=vidurkis_ev1f/4700; //srove
 		  vidurkis_ev1f=vidurkis_ev1f*COEF*CORR1; //apsviestumas
+		  vidurkis_ev2f=vidurkis_ev2f*VDD/4095; //itampa ant r
+		  vidurkis_ev2f=vidurkis_ev2f/4700; //srove
+		  vidurkis_ev2f=vidurkis_ev2f*COEF*CORR2; //apsviestumas
 
 		  skirtumas=dma[SAMPLES*CHANNELS-1-1]-dma[SAMPLES*CHANNELS-1];
-		  skirtumas_f=VDD-skirtumas*VDD/4095;
-		  skirtumas_f=skirtumas_f/825;
+		  skirtumas_f=skirtumas*VDD/4095;
+		  skirtumas_f=skirtumas_f/4700;
 		  skirtumas_f=skirtumas_f*COEF*(CORR1+CORR2)/2;
 	  }
 //	  ssd1306_SetCursor(column_pos,9);
@@ -268,7 +276,7 @@ static void MX_ADC_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_3;
   sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
-  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_7CYCLES_5;
   if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
   {
     Error_Handler();
