@@ -1,7 +1,7 @@
 # Įterptinių sistemų inžinerinis projektas
 
-<img width="1013" height="851" alt="image" src="https://github.com/user-attachments/assets/19d477ec-8cbc-4c7d-93e2-5d9469478823" /> <br />
-<img width="1024" height="550" alt="image" src="https://github.com/user-attachments/assets/e08cf376-2199-4f51-85f1-52960833e1ea" /> <br />
+<img width="903" height="774" alt="image" src="https://github.com/user-attachments/assets/f60f2acc-ccac-4346-9729-32f1e3194139" /> <br />
+<img width="732" height="590" alt="image" src="https://github.com/user-attachments/assets/91ca460c-ab8e-49de-b5ac-fe785349629d" /> <br />
  
 Matuojamas apšviestumas:
 * 20 - 200 lx
