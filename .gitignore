@@ -109,6 +109,8 @@ Project Outputs for */
 *.TXT
 *.xml
 *.csv
+
+dokumentacija/
 *.png
 *.xlsx
 *.docx
