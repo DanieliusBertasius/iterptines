@@ -1,6 +1,6 @@
 # Įterptinių sistemų inžinerinis projektas
 
-<img width="920" height="697" alt="image" src="https://github.com/user-attachments/assets/61e311bc-f7bd-464e-936b-abe125e3fb8c" /> <br />
+<img width="1013" height="851" alt="image" src="https://github.com/user-attachments/assets/19d477ec-8cbc-4c7d-93e2-5d9469478823" /> <br />
 <img width="1024" height="550" alt="image" src="https://github.com/user-attachments/assets/e08cf376-2199-4f51-85f1-52960833e1ea" /> <br />
  
 Matuojamas apšviestumas:
