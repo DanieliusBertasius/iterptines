@@ -1,8 +1,7 @@
 # Įterptinių sistemų inžinerinis projektas
 
-<img width="920" height="697" alt="image" src="https://github.com/user-attachments/assets/61e311bc-f7bd-464e-936b-abe125e3fb8c" /> <br />
-Pakeist fototranzu jungima
-<img width="729" height="440" alt="image" src="https://github.com/user-attachments/assets/eef47d86-84c7-4af2-9bad-427a1071d531" /> <br />
+<img width="1013" height="851" alt="image" src="https://github.com/user-attachments/assets/19d477ec-8cbc-4c7d-93e2-5d9469478823" /> <br />
+<img width="1024" height="550" alt="image" src="https://github.com/user-attachments/assets/e08cf376-2199-4f51-85f1-52960833e1ea" /> <br />
  
 Matuojamas apšviestumas:
 * 20 - 200 lx
@@ -19,7 +18,7 @@ Matuojama nuolatinė įtampa:
 Indikatoriuje parodymai atnaujinami kas 2s, apšviestumo parametrai į PC perduodami kas 0.2 s, įtampos - kas 1 s.
 
 ## Pagrindiniai komponentai:
-* STM32F042K6T6
+* STM32L073RZ
 * TEPT5600 fototranzistoriai
 * MCP6S22 PGA
 * SSD1306 I2C OLED ekranas
