@@ -23,6 +23,8 @@
 /* USER CODE BEGIN Includes */
 #include "ssd1306.h"
 #include "ssd1306_fonts.h"
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -39,8 +41,6 @@
 #define COEF 387097
 #define CORR1 14.6
 #define CORR2 14.6
-#define LEAK1 0
-#define LEAK2 0
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -63,11 +63,11 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 volatile uint16_t dma[CHANNELS*SAMPLES];
 uint32_t vidurkis_ev1=0,vidurkis_ev2=0,vidurkis_u1=0,vidurkis_u2=0;
-int16_t skirtumas=0;
-float vidurkis_ev1f=0,vidurkis_ev2f=0,vidurkis_u1f=0,vidurkis_u2f=0,skirtumas_f;
-volatile uint8_t dma_full=0,counter=0,spi_sent=0;
+float vidurkis_ev1f=0,vidurkis_ev2f=0,vidurkis_u1f=0,vidurkis_u2f=0,skirtumas=0;
+volatile uint8_t dma_full=0,pga_counter=0,spi_sent=0,display_counter=0,uart_sent=1;
 uint8_t channel_reg[]={1,0,0,0,0,0,1,0}, ch0[]={0,0,0,0,0,0,0,0}, ch1[]={1,0,0,0,0,0,0,0};
 uint8_t channel=0;
+char string_display[30],tx[60];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -125,12 +125,13 @@ int main(void)
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   if (HAL_ADCEx_Calibration_Start(&hadc,ADC_SINGLE_ENDED) != HAL_OK)
-    {
-        Error_Handler();
-    }
+  {
+	  Error_Handler();
+  }
 
-    HAL_ADC_Start_DMA(&hadc, (uint32_t*)dma, SAMPLES*CHANNELS);
-    HAL_TIM_Base_Start(&htim2);
+  HAL_ADC_Start_DMA(&hadc, (uint32_t*)dma, SAMPLES*CHANNELS);
+  HAL_TIM_Base_Start(&htim2);
+  ssd1306_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -150,15 +151,41 @@ int main(void)
 
 		  vidurkis_ev1f=vidurkis_ev1f*VDD/4095; //itampa ant r
 		  vidurkis_ev1f=vidurkis_ev1f/4700; //srove
-		  vidurkis_ev1f=vidurkis_ev1f*COEF*CORR1-LEAK1; //apsviestumas
+		  vidurkis_ev1f=vidurkis_ev1f*COEF*CORR1; //apsviestumas
 		  vidurkis_ev2f=vidurkis_ev2f*VDD/4095; //itampa ant r
 		  vidurkis_ev2f=vidurkis_ev2f/4700; //srove
-		  vidurkis_ev2f=vidurkis_ev2f*COEF*CORR2-LEAK2; //apsviestumas
+		  vidurkis_ev2f=vidurkis_ev2f*COEF*CORR2; //apsviestumas
 
-		  skirtumas=dma[SAMPLES*CHANNELS-1-1]-dma[SAMPLES*CHANNELS-1];
-		  skirtumas_f=skirtumas*VDD/4095;
-		  skirtumas_f=skirtumas_f/4700;
-		  skirtumas_f=skirtumas_f*COEF*(CORR1+CORR2)/2;
+		  skirtumas=vidurkis_ev1f-vidurkis_ev2f;
+
+		  if(uart_sent){
+			  uart_sent=0;
+			  int len = sprintf(tx,"Ev1 = %.1f lx\r\nEv2 = %.1f lx\r\nEv1 - Ev2 = %.1f lx\r\n\r\n",vidurkis_ev1f,vidurkis_ev2f,skirtumas);
+			  HAL_UART_Transmit_IT(&huart2, (uint8_t *)tx, len);
+		  }
+	  }
+	  if(display_counter==10){
+		  display_counter=0;
+		  ssd1306_SetCursor(0,0);
+		  sprintf(string_display,"Ev1 = %.1f lx ",vidurkis_ev1f);
+		  ssd1306_WriteString(string_display,Font_6x8, White);
+
+		  ssd1306_SetCursor(0,14);
+		  sprintf(string_display,"Ev2 = %.1f lx ",vidurkis_ev2f);
+		  ssd1306_WriteString(string_display,Font_6x8, White);
+
+		  ssd1306_SetCursor(0,28);
+		  sprintf(string_display,"Ev1 - Ev2 = %.1f lx ",skirtumas);
+		  ssd1306_WriteString(string_display,Font_6x8, White);
+
+		  ssd1306_SetCursor(0,42);
+		  sprintf(string_display,"U1 = %.1f V ",vidurkis_u1f);
+		  ssd1306_WriteString(string_display,Font_6x8, White);
+
+		  ssd1306_SetCursor(0,56);
+		  sprintf(string_display,"U2 = %.1f V ",vidurkis_u2f);
+		  ssd1306_WriteString(string_display,Font_6x8, White);
+		  ssd1306_UpdateScreen();
 	  }
     /* USER CODE END WHILE */
 
@@ -271,7 +298,7 @@ static void MX_ADC_Init(void)
 
   /** Configure for the selected ADC regular channel to be converted.
   */
-  sConfig.Channel = ADC_CHANNEL_4;
+  sConfig.Channel = ADC_CHANNEL_8;
   if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -279,7 +306,7 @@ static void MX_ADC_Init(void)
 
   /** Configure for the selected ADC regular channel to be converted.
   */
-  sConfig.Channel = ADC_CHANNEL_11;
+  sConfig.Channel = ADC_CHANNEL_10;
   if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -437,7 +464,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
+  huart2.Init.BaudRate = 38400;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -525,7 +552,11 @@ static void MX_GPIO_Init(void)
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 {
     dma_full=1;
-    counter++;
+    pga_counter++;
+    display_counter++;
+}
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
+	uart_sent=1;
 }
 /* USER CODE END 4 */
 
