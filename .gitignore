@@ -109,7 +109,9 @@ Project Outputs for */
 *.TXT
 *.xml
 *.csv
-
+*.png
+*.xlsx
+*.docx
 
 # =========================
 # Optional archives
