@@ -25,6 +25,7 @@
 #include "ssd1306_fonts.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -61,7 +62,6 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 volatile uint16_t adc[CHANNELS*SAMPLES]; //bendras adc masyvas
-uint16_t ch0_buffer[SAMPLES/2],ch1_buffer[SAMPLES/2]; //itampos masyvai
 
 uint32_t suma_ev1=0,suma_ev2=0,suma_u1=0,suma_u2=0; //atskaitu kaupimui
 float vidurkis_ev1=0,vidurkis_ev2=0,vidurkis_u1=0,vidurkis_u2=0,skirtumas=0; //isvedami kintamieji
@@ -69,9 +69,9 @@ float vidurkis_ev1=0,vidurkis_ev2=0,vidurkis_u1=0,vidurkis_u2=0,skirtumas=0; //i
 volatile uint8_t adc_half=0,adc_full=0,pga_counter=0,spi_sent=0,display_counter=0,uart_ready=1,uart_received=0; //flags
 
 uint8_t channel_reg=0b01000001, ch0_add=0, ch1_add=1;
-uint8_t gain_reg=0b01000000;
+uint8_t gain_reg=0b01000000,gain_array[8]={1,2,4,5,8,10,16,32};
 
-uint8_t channel=0,gain=1,config=0,calib_received=0;
+uint8_t pga_active_ch=0,curr_gain=1,config=0,calib_received=0;
 float calib1=14.6,calib2=14.6;
 uint16_t spi=0; // kintamasis spi siuntimui
 char string_display[30],tx[60],rx[20]; //i2c ir uart masyvai
@@ -88,8 +88,8 @@ static void MX_SPI1_Init(void);
 static void MX_ADC_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
-void SetChannel(uint8_t channel);
-void SetGain(uint8_t gain);
+static void PGA_SetChannel(uint8_t ch);
+static void PGA_SetGain(uint8_t gain_idx);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -144,8 +144,14 @@ int main(void)
   ssd1306_SetCursor(0,20);
   ssd1306_WriteString("Duomenys",Font_7x10, White);
   ssd1306_SetCursor(0,32);
-    ssd1306_WriteString("renkami...",Font_7x10, White);
+  ssd1306_WriteString("renkami...",Font_7x10, White);
   ssd1306_UpdateScreen();
+
+  pga_active_ch=0;
+  PGA_SetChannel(pga_active_ch);
+  curr_gain=1; //2
+  PGA_SetGain(curr_gain);
+
   HAL_UART_Receive_IT(&huart2, (uint8_t *)rx, 6);
   /* USER CODE END 2 */
 
@@ -205,6 +211,30 @@ int main(void)
 			  uart_ready=0;
 			  int len = sprintf(tx,"Ev1 = %.1f lx\r\nEv2 = %.1f lx\r\nEv1 - Ev2 = %.1f lx\r\n\r\n",vidurkis_ev1,vidurkis_ev2,skirtumas);
 			  HAL_UART_Transmit_IT(&huart2, (uint8_t *)tx, len);
+		  }
+
+		  const float VOLTAGE_DIV = 7.788f;
+
+		  uint32_t suma_u = 0;
+		  for (int i = 0; i < SAMPLES * CHANNELS; i += 3)
+			  suma_u += adc[i];
+
+		  float avg_u_raw = (float)suma_u / SAMPLES;
+		  float v_adc = avg_u_raw * VDD / 4095.0f;
+
+		  if (pga_active_ch == 0)
+		  {
+			  vidurkis_u1 = v_adc * VOLTAGE_DIV;
+			  /* Perjungiame i U2 */
+			  pga_active_ch = 1;
+			  PGA_SetChannel(1);
+		  }
+		  else
+		  {
+			  vidurkis_u2 = v_adc * VOLTAGE_DIV;
+			  /* Perjungiame atgal i U1 */
+			  pga_active_ch = 0;
+			  PGA_SetChannel(0);
 		  }
 	  }
 	  if(display_counter==10){
@@ -593,10 +623,20 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void SetChannel(uint8_t channel){
-	//spi=(channel_reg<<8)&&0xFF00;
+static void PGA_SetChannel(uint8_t ch)
+{
+    uint16_t cmd = ((uint16_t)0x41 << 8) | (ch & 0x07);
+    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_RESET);
+    HAL_SPI_Transmit(&hspi1, (uint8_t *)&cmd, 1, 10);
+    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_SET);
 }
-
+static void PGA_SetGain(uint8_t gain_idx)
+{
+    uint16_t cmd = ((uint16_t)0x40 << 8) | (gain_idx & 0x07);
+    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_RESET);
+    HAL_SPI_Transmit(&hspi1, (uint8_t *)&cmd, 1, 10);
+    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_SET);
+}
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc){
     adc_half=1;
 }
