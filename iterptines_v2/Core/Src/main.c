@@ -147,7 +147,7 @@ int main(void)
   ssd1306_WriteString("renkami...",Font_7x10, White);
   ssd1306_UpdateScreen();
 
-  pga_active_ch=0;
+  pga_active_ch=1;
   PGA_SetChannel(pga_active_ch);
   curr_gain=1; //2
   PGA_SetGain(curr_gain);
