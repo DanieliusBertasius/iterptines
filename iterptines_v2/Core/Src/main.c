@@ -382,7 +382,7 @@ int main(void)
                     /* Stiprinimas pasikeite – reikia 1 ciklo stabilizacijai.
                        Šio ciklo rezultato neissaugome. */
                     PGA_SetGain(*p_gain);
-                    //pga_skip_cycle = 1;
+                    pga_skip_cycle = 1;
                 }
                 else
                 {
