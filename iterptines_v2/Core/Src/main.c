@@ -4,16 +4,6 @@
   * @file           : main.c
   * @brief          : Main program body
   ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
@@ -30,22 +20,26 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SAMPLES 50
-#define CHANNELS 3
-#define VDD 3.21
-#define COEF 387097
-#define HIGH 4000
-#define LOW 400
+#define SAMPLES     50
+#define CHANNELS    3
+#define VDD         3.21f
+#define COEF        374917UL
+#define R_SENSOR    4700.0f
+
+#define AGC_LOW     410U    /* ~10 % skales – stiprinamas labiau   */
+#define AGC_HIGH    3686U   /* ~90 % skales – stiprinamas mažiau   */
+
+static const float gain_table[8] = {
+    1.0f, 2.0f, 4.0f, 5.0f, 8.0f, 10.0f, 16.0f, 32.0f
+};
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -61,21 +55,48 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-volatile uint16_t adc[CHANNELS*SAMPLES]; //bendras adc masyvas
 
-uint32_t suma_ev1=0,suma_ev2=0,suma_u1=0,suma_u2=0; //atskaitu kaupimui
-float vidurkis_ev1=0,vidurkis_ev2=0,vidurkis_u1=0,vidurkis_u2=0,skirtumas=0; //isvedami kintamieji
+volatile uint16_t adc[CHANNELS * SAMPLES];
 
-volatile uint8_t adc_half=0,adc_full=0,pga_counter=0,spi_sent=0,display_counter=0,uart_ready=1,uart_received=0; //flags
+float vidurkis_ev1 = 0.0f;   /* apsviestumo kanalas 1 [lx]  */
+float vidurkis_ev2 = 0.0f;   /* apsviestumo kanalas 2 [lx]  */
+float skirtumas    = 0.0f;   /* ev1 - ev2 [lx]              */
+float vidurkis_u1  = 0.0f;   /* itampos kanalas 1 [V]       */
+float vidurkis_u2  = 0.0f;   /* itampos kanalas 2 [V]       */
 
-uint8_t channel_reg=0b01000001, ch0_add=0, ch1_add=1;
-uint8_t gain_reg=0b01000000,gain_array[8]={1,2,4,5,8,10,16,32};
+float calib1 = 11.0f;
+float calib2 = 11.0f;
 
-uint8_t pga_active_ch=0,curr_gain=1,config=0,calib_received=0;
-float calib1=14.6,calib2=14.6;
-uint16_t spi=0; // kintamasis spi siuntimui
-char string_display[30],tx[60],rx[20]; //i2c ir uart masyvai
-char iveskite[]="Iveskite norimus Ev1 ir Ev2 kanalu kalibravimo koeficientus: ";
+volatile uint8_t adc_full      = 0;
+volatile uint8_t uart_ready    = 1;
+volatile uint8_t uart_received = 0;
+
+typedef enum {
+    UART_STATE_IDLE = 0,
+    UART_STATE_WAIT_C1,
+    UART_STATE_WAIT_C2
+} UartState;
+volatile UartState uart_state = UART_STATE_IDLE;
+
+char tx[80];
+char rx[20];
+char string_display[22];
+
+static uint8_t pga_active_ch = 0;   /* 0 = U1, 1 = U2 */
+
+static uint8_t gain_idx_u1 = 0;   /* pradzia: 1x */
+static uint8_t gain_idx_u2 = 0;   /* pradzia: 1x */
+
+/* --- AGC: praleisti N ciklu po kanalo perjungimo ---
+       > 0  = dar laukiame stabilizacijos (MCP6S22 isejimas dar nestabilizavosi)
+       = 0  = duomenys galioja                                                   */
+static uint8_t pga_skip_cycle = 0;
+
+/* --- UART ciklo skaitliukas:
+       uart_cycle = 0..4  -> apsviestumo eilute  (~200 ms x 5 = ~1 s)
+       uart_cycle = 5     -> itampos eilute       (~1.2 s), tada reset i 0      */
+static uint8_t uart_cycle = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -90,10 +111,87 @@ static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 static void PGA_SetChannel(uint8_t ch);
 static void PGA_SetGain(uint8_t gain_idx);
+static void Display_Update(void);
+static void UART_SendLight(void);
+static void UART_SendVoltage(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+static void PGA_SetChannel(uint8_t ch)
+{
+    uint16_t cmd = ((uint16_t)0x41 << 8) | (ch & 0x07);
+    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_RESET);
+    HAL_SPI_Transmit(&hspi1, (uint8_t *)&cmd, 1, 10);
+    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_SET);
+}
+
+static void PGA_SetGain(uint8_t gain_idx)
+{
+    uint16_t cmd = ((uint16_t)0x40 << 8) | (gain_idx & 0x07);
+    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_RESET);
+    HAL_SPI_Transmit(&hspi1, (uint8_t *)&cmd, 1, 10);
+    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_SET);
+}
+
+/**
+ * @brief  Atnaujina OLED ekrana.
+ */
+static void Display_Update(void)
+{
+    ssd1306_Fill(Black);
+
+    ssd1306_SetCursor(0, 0);
+    snprintf(string_display, sizeof(string_display), "Ev1 = %7.1f lx", vidurkis_ev1);
+    ssd1306_WriteString(string_display, Font_6x8, White);
+
+    ssd1306_SetCursor(0, 11);
+    snprintf(string_display, sizeof(string_display), "Ev2 = %7.1f lx", vidurkis_ev2);
+    ssd1306_WriteString(string_display, Font_6x8, White);
+
+    ssd1306_SetCursor(0, 22);
+    snprintf(string_display, sizeof(string_display), "dEv = %7.1f lx", skirtumas);
+    ssd1306_WriteString(string_display, Font_6x8, White);
+
+    ssd1306_SetCursor(0, 33);
+    snprintf(string_display, sizeof(string_display), "U1  = %7.2f V ", vidurkis_u1);
+    ssd1306_WriteString(string_display, Font_6x8, White);
+
+    ssd1306_SetCursor(0, 44);
+    snprintf(string_display, sizeof(string_display), "U2  = %7.2f V ", vidurkis_u2);
+    ssd1306_WriteString(string_display, Font_6x8, White);
+
+    ssd1306_UpdateScreen();
+}
+
+/**
+ * @brief  Siuncia apsviestumo duomenis per UART (kas ~0.2 s).
+ *         Viena eilute: Ev1, Ev2, dEv.
+ */
+static void UART_SendLight(void)
+{
+    if (!uart_ready) return;
+    uart_ready = 0;
+    int len = snprintf(tx, sizeof(tx),
+        "Ev1 = %.1f lx, Ev2 = %.1f lx, dEv = %.1f lx\r\n",
+        vidurkis_ev1, vidurkis_ev2, skirtumas);
+    HAL_UART_Transmit_IT(&huart2, (uint8_t *)tx, (uint16_t)len);
+}
+
+/**
+ * @brief  Siuncia itampos duomenis per UART (kas ~1.2 s).
+ *         Viena eilute: U1, U2.
+ */
+static void UART_SendVoltage(void)
+{
+    if (!uart_ready) return;
+    uart_ready = 0;
+    int len = snprintf(tx, sizeof(tx),
+        "                                                    U1 = %.2f V,  U2 = %.2f V\r\n",
+        vidurkis_u1, vidurkis_u2);
+    HAL_UART_Transmit_IT(&huart2, (uint8_t *)tx, (uint16_t)len);
+}
 
 /* USER CODE END 0 */
 
@@ -105,7 +203,6 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -114,14 +211,12 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -133,138 +228,204 @@ int main(void)
   MX_ADC_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-  if (HAL_ADCEx_Calibration_Start(&hadc,ADC_SINGLE_ENDED) != HAL_OK)
-  {
-	  Error_Handler();
-  }
 
-  HAL_ADC_Start_DMA(&hadc, (uint32_t*)adc, SAMPLES*CHANNELS);
-  HAL_TIM_Base_Start(&htim2);
-  ssd1306_Init();
-  ssd1306_SetCursor(0,20);
-  ssd1306_WriteString("Duomenys",Font_7x10, White);
-  ssd1306_SetCursor(0,32);
-  ssd1306_WriteString("renkami...",Font_7x10, White);
-  ssd1306_UpdateScreen();
+    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_SET);
 
-  pga_active_ch=1;
-  PGA_SetChannel(pga_active_ch);
-  curr_gain=1; //2
-  PGA_SetGain(curr_gain);
+    /* MCP6S22 pradine konfiguracija: kanalas 0 (U1), stiprinimas 1x.*/
+    PGA_SetGain(0);
+    PGA_SetChannel(0);
+    pga_active_ch  = 0;
+    pga_skip_cycle = 2;   /* Leisti stabilizuotis po pradines konfiguracijos */
 
-  HAL_UART_Receive_IT(&huart2, (uint8_t *)rx, 6);
+    if (HAL_ADCEx_Calibration_Start(&hadc, ADC_SINGLE_ENDED) != HAL_OK)
+        Error_Handler();
+
+    HAL_ADC_Start_DMA(&hadc, (uint32_t *)adc, SAMPLES * CHANNELS);
+    HAL_TIM_Base_Start(&htim2);
+
+    ssd1306_Init();
+    ssd1306_Fill(Black);
+    ssd1306_SetCursor(10, 24);
+    ssd1306_WriteString("Duomenys", Font_7x10, White);
+    ssd1306_SetCursor(10, 36);
+    ssd1306_WriteString("renkami...", Font_7x10, White);
+    ssd1306_UpdateScreen();
+
+    HAL_UART_Receive_IT(&huart2, (uint8_t *)rx, 6);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-//	  if(adc_half){
-//		  adc_half=0;
-//		  for(int i=1;i<(SAMPLES/2*CHANNELS)-1;i+=3){
-//
-//		  }
-//	  }
-	  if(uart_received){
-		  uart_received=0;
-		  if(config){ //jeigu gauta po config komandos ivedimo
-			  calib_received++;
-			  if(calib_received==1){
-				  HAL_UART_Receive_IT(&huart2, (uint8_t *)rx, 2);
-			  }
-		  }
-		  if(strcmp(rx, "config") == 0){
-			  config=1;
-			  HAL_UART_Transmit_IT(&huart2, (uint8_t *)iveskite, strlen(iveskite));
-			  HAL_UART_Receive_IT(&huart2, (uint8_t *)rx, 2);
-		  }
-		  else if(config==0){ //jeigu neatitinka komanda, leidziama bandyti dar karta
-			  HAL_UART_Receive_IT(&huart2, (uint8_t *)rx, 6);
-		  }
 
+    uint32_t tick_display = 0;
 
-	  }
-	  if(adc_full){
-		  adc_full=0;
-		  display_counter++;
+    while (1)
+    {
+        if (uart_received)
+        {
+            uart_received = 0;
 
-		  suma_ev1=0;
-		  suma_ev2=0;
-		  // pradedama nuo paskutines pga atskaitos
-		  for(int i=0;i<SAMPLES*CHANNELS-1;i+=3){
-			  suma_ev1+=adc[i+1];
-			  suma_ev2+=adc[i+2];
-		  }
-		  vidurkis_ev1=(float)suma_ev1/SAMPLES;
-		  vidurkis_ev2=(float)suma_ev2/SAMPLES;
+            switch (uart_state)
+            {
+                case UART_STATE_IDLE:
+                {
+                    if (strncmp(rx, "config", 6) == 0)
+                    {
+                        uart_state = UART_STATE_WAIT_C1;
+                        const char *prompt =
+                            "\r\nIveskite Ev1 kalibravimo koeficienta (2 skaitmenys, pvz. 15):\r\n";
+                        HAL_UART_Transmit(&huart2, (uint8_t *)prompt,
+                                          (uint16_t)strlen(prompt), 200);
+                        HAL_UART_Receive_IT(&huart2, (uint8_t *)rx, 2);
+                    }
+                    else
+                    {
+                        memset(rx, 0, sizeof(rx));
+                        HAL_UART_Receive_IT(&huart2, (uint8_t *)rx, 6);
+                    }
+                    break;
+                }
 
-		  vidurkis_ev1=vidurkis_ev1*VDD/4095; //itampa ant r
-		  vidurkis_ev1=vidurkis_ev1/4700; //srove
-		  vidurkis_ev1=vidurkis_ev1*COEF*calib1; //apsviestumas
-		  vidurkis_ev2=vidurkis_ev2*VDD/4095; //itampa ant r
-		  vidurkis_ev2=vidurkis_ev2/4700; //srove
-		  vidurkis_ev2=vidurkis_ev2*COEF*calib2; //apsviestumas
+                case UART_STATE_WAIT_C1:
+                {
+                    int val = 0;
+                    if (rx[0] >= '0' && rx[0] <= '9' &&
+                        rx[1] >= '0' && rx[1] <= '9')
+                    {
+                        val = (rx[0] - '0') * 10 + (rx[1] - '0');
+                        calib1 = (float)val;
+                    }
+                    uart_state = UART_STATE_WAIT_C2;
+                    const char *prompt2 =
+                        "\r\nIveskite Ev2 kalibravimo koeficienta (2 skaitmenys):\r\n";
+                    HAL_UART_Transmit(&huart2, (uint8_t *)prompt2,
+                                      (uint16_t)strlen(prompt2), 200);
+                    HAL_UART_Receive_IT(&huart2, (uint8_t *)rx, 2);
+                    break;
+                }
 
-		  skirtumas=vidurkis_ev1-vidurkis_ev2;
+                case UART_STATE_WAIT_C2:
+                {
+                    int val = 0;
+                    if (rx[0] >= '0' && rx[0] <= '9' &&
+                        rx[1] >= '0' && rx[1] <= '9')
+                    {
+                        val = (rx[0] - '0') * 10 + (rx[1] - '0');
+                        calib2 = (float)val;
+                    }
+                    uart_state = UART_STATE_IDLE;
+                    const char *done =
+                        "\r\nKalibracija atlikta. Tesiamas matavimas.\r\n\r\n";
+                    HAL_UART_Transmit(&huart2, (uint8_t *)done,
+                                      (uint16_t)strlen(done), 200);
+                    memset(rx, 0, sizeof(rx));
+                    HAL_UART_Receive_IT(&huart2, (uint8_t *)rx, 6);
+                    break;
+                }
 
-		  if(uart_ready&&!config){
-			  uart_ready=0;
-			  int len = sprintf(tx,"Ev1 = %.1f lx\r\nEv2 = %.1f lx\r\nEv1 - Ev2 = %.1f lx\r\n\r\n",vidurkis_ev1,vidurkis_ev2,skirtumas);
-			  HAL_UART_Transmit_IT(&huart2, (uint8_t *)tx, len);
-		  }
+                default:
+                    uart_state = UART_STATE_IDLE;
+                    HAL_UART_Receive_IT(&huart2, (uint8_t *)rx, 6);
+                    break;
+            }
+        }
 
-		  const float VOLTAGE_DIV = 7.788f;
+        if (adc_full)
+        {
+            adc_full = 0;
 
-		  uint32_t suma_u = 0;
-		  for (int i = 0; i < SAMPLES * CHANNELS; i += 3)
-			  suma_u += adc[i];
+            uint32_t suma_ev1 = 0, suma_ev2 = 0;
+            for (int i = 0; i < SAMPLES * CHANNELS; i += 3)
+            {
+                suma_ev1 += adc[i + 1];
+                suma_ev2 += adc[i + 2];
+            }
+            float avg_ev1_raw = (float)suma_ev1 / SAMPLES;
+            float avg_ev2_raw = (float)suma_ev2 / SAMPLES;
 
-		  float avg_u_raw = (float)suma_u / SAMPLES;
-		  float v_adc = avg_u_raw * VDD / 4095.0f;
+            vidurkis_ev1 = (avg_ev1_raw * VDD / 4095.0f) / R_SENSOR * (float)COEF * calib1;
+            vidurkis_ev2 = (avg_ev2_raw * VDD / 4095.0f) / R_SENSOR * (float)COEF * calib2;
+            skirtumas    = vidurkis_ev1 - vidurkis_ev2;
 
-		  if (pga_active_ch == 0)
-		  {
-			  vidurkis_u1 = v_adc * VOLTAGE_DIV;
-			  /* Perjungiame i U2 */
-			  pga_active_ch = 1;
-			  PGA_SetChannel(1);
-		  }
-		  else
-		  {
-			  vidurkis_u2 = v_adc * VOLTAGE_DIV;
-			  /* Perjungiame atgal i U1 */
-			  pga_active_ch = 0;
-			  PGA_SetChannel(0);
-		  }
-	  }
-	  if(display_counter==10){
-		  display_counter=0;
-		  ssd1306_Fill(Black);
-		  ssd1306_SetCursor(0,0);
-		  sprintf(string_display,"Ev1 = %.1f lx ",vidurkis_ev1);
-		  ssd1306_WriteString(string_display,Font_6x8, White);
+            const float VOLTAGE_DIV = 7.788f;
 
-		  ssd1306_SetCursor(0,14);
-		  sprintf(string_display,"Ev2 = %.1f lx ",vidurkis_ev2);
-		  ssd1306_WriteString(string_display,Font_6x8, White);
+            uint32_t suma_u = 0;
+            for (int i = 0; i < SAMPLES * CHANNELS; i += 3)
+                suma_u += adc[i];
 
-		  ssd1306_SetCursor(0,28);
-		  sprintf(string_display,"Ev1-Ev2 = %.1f lx ",skirtumas);
-		  ssd1306_WriteString(string_display,Font_6x8, White);
+            uint32_t avg_u_raw = suma_u / SAMPLES;
 
-		  ssd1306_SetCursor(0,42);
-		  sprintf(string_display,"U1 = %.1f V ",vidurkis_u1);
-		  ssd1306_WriteString(string_display,Font_6x8, White);
+            if (pga_skip_cycle > 0)
+            {
+                /* Stabilizacijos laukimas */
+                pga_skip_cycle--;
+            }
+            else
+            {
+                uint8_t *p_gain = (pga_active_ch == 0) ? &gain_idx_u1 : &gain_idx_u2;
+                uint8_t gain_changed = 0;
 
-		  ssd1306_SetCursor(0,56);
-		  sprintf(string_display,"U2 = %.1f V ",vidurkis_u2);
-		  ssd1306_WriteString(string_display,Font_6x8, White);
-		  ssd1306_UpdateScreen();
-	  }
+                if (avg_u_raw < AGC_LOW && *p_gain < 7)
+                {
+                    (*p_gain)++;
+                    gain_changed = 1;
+                }
+                else if (avg_u_raw > AGC_HIGH && *p_gain > 0)
+                {
+                    (*p_gain)--;
+                    gain_changed = 1;
+                }
+
+                if (gain_changed)
+                {
+                    /* Stiprinimas pasikeite – reikia 1 ciklo stabilizacijai.
+                       Šio ciklo rezultato neissaugome. */
+                    PGA_SetGain(*p_gain);
+                    //pga_skip_cycle = 1;
+                }
+                else
+                {
+                    float v_adc  = (float)avg_u_raw * VDD / 4095.0f;
+                    float v_real = (v_adc / gain_table[*p_gain]) * VOLTAGE_DIV;
+
+                    if (pga_active_ch == 0)
+                        vidurkis_u1 = v_real;
+                    else
+                        vidurkis_u2 = v_real;
+
+                    pga_active_ch ^= 1;
+                    PGA_SetGain((pga_active_ch == 0) ? gain_idx_u1 : gain_idx_u2);
+                    PGA_SetChannel(pga_active_ch);
+                    pga_skip_cycle = 2;
+                }
+            }
+
+            if (uart_state == UART_STATE_IDLE)
+            {
+                if (uart_cycle < 5)
+                {
+                    UART_SendLight();
+                    uart_cycle++;
+                }
+                else
+                {
+                    UART_SendVoltage();
+                    uart_cycle = 0;
+                }
+            }
+        }
+
+        if ((HAL_GetTick() - tick_display) >= 2000UL)
+        {
+            tick_display = HAL_GetTick();
+            Display_Update();
+        }
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
+    }
   /* USER CODE END 3 */
 }
 
@@ -462,7 +623,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -538,7 +699,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 38400;
+  huart2.Init.BaudRate = 115200;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -623,33 +784,25 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-static void PGA_SetChannel(uint8_t ch)
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc_cb)
 {
-    uint16_t cmd = ((uint16_t)0x41 << 8) | (ch & 0x07);
-    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_RESET);
-    HAL_SPI_Transmit(&hspi1, (uint8_t *)&cmd, 1, 10);
-    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_SET);
+    (void)hadc_cb;
+    adc_full = 1;
 }
-static void PGA_SetGain(uint8_t gain_idx)
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart_cb)
 {
-    uint16_t cmd = ((uint16_t)0x40 << 8) | (gain_idx & 0x07);
-    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_RESET);
-    HAL_SPI_Transmit(&hspi1, (uint8_t *)&cmd, 1, 10);
-    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_SET);
+    (void)huart_cb;
+    uart_ready = 1;
 }
-void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc){
-    adc_half=1;
-}
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
-    adc_full=1;
-}
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){
-	uart_ready=1;
-}
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart_cb)
 {
-	uart_received=1;
+    (void)huart_cb;
+    uart_received = 1;
 }
+
 /* USER CODE END 4 */
 
 /**
@@ -659,11 +812,12 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+    __disable_irq();
+    while (1)
+    {
+        HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+        HAL_Delay(200);
+    }
   /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT
